@@ -1,201 +1,265 @@
-// hud.js — everything on screen that is not the city: wanted stars, health,
-// cash, the mission tracker, the minimap, message toasts, and the menus
-// (title, pause, mission complete, busted, wasted). The minimap is its own
-// small canvas so it stays crisp at any window size.
-import { money } from './util.js';
+// hud.js — everything on screen that is not the 3D island: wanted stars,
+// cash, health, the mission tracker, the live minimap, district standing,
+// the crew strip, race position, toasts, and the menus (title, pause, story,
+// race result, crew, busted, wasted). The minimap is its own small canvas so
+// it stays crisp at any window size.
+import { money, dist } from './util.js';
+import { AVENUES, STREETS, VOLCANO, DISTRICTS } from './terrain3d.js';
+import { missionTitle, currentStepDef } from './missions.js';
 
 export function makeHud() {
+  const $ = (id) => document.getElementById(id);
   const hud = {
-    root: document.getElementById('hud'),
-    stars: document.getElementById('stars'),
-    cash: document.getElementById('cash'),
-    healthFill: document.getElementById('health-fill'),
-    healthText: document.getElementById('health-text'),
-    missionTitle: document.getElementById('mission-title'),
-    missionText: document.getElementById('mission-text'),
-    toast: document.getElementById('toast'),
-    speed: document.getElementById('speed'),
-    carName: document.getElementById('car-name'),
-    minimap: document.getElementById('minimap'),
-    menu: document.getElementById('menu'),
-    menuTitle: document.getElementById('menu-title'),
-    menuBody: document.getElementById('menu-body'),
-    menuHint: document.getElementById('menu-hint'),
-    busted: document.getElementById('busted'),
+    root: $('hud'),
+    stars: $('stars'),
+    cash: $('cash'),
+    healthFill: $('health-fill'),
+    healthText: $('health-text'),
+    missionTitle: $('mission-title'),
+    missionText: $('mission-text'),
+    toastEl: $('toast'),
+    speed: $('speed'),
+    carName: $('car-name'),
+    minimap: $('minimap'),
+    districtsEl: $('districts'),
+    crewEl: $('crew-strip'),
+    raceHud: $('race-hud'),
+    racePos: $('race-pos'),
+    raceCp: $('race-cp'),
+    raceCountEl: $('race-count'),
+    menu: $('menu'),
+    menuTitle: $('menu-title'),
+    menuBody: $('menu-body'),
+    menuHint: $('menu-hint'),
+    busted: $('busted'),
+    crewPanel: $('crew-panel'),
     toastTimer: 0,
+    toastQueue: [],
+    mapCtx: null,
   };
-  hud.mapCtx = hud.minimap.getContext('2d');
-  return hud;
-}
+  if (hud.minimap) hud.mapCtx = hud.minimap.getContext('2d');
 
-export function showToast(hud, text, seconds = 3.2) {
-  hud.toast.textContent = text;
-  hud.toast.classList.add('show');
-  hud.toastTimer = seconds;
-}
+  hud.toast = (text, kind) => {
+    hud.toastQueue.push({ text, kind: kind || '' });
+    if (hud.toastQueue.length > 3) hud.toastQueue.shift();
+    hud.toastEl.innerHTML = hud.toastQueue.map((t) => `<div class="toast-line ${t.kind}">${t.text}</div>`).join('');
+    hud.toastEl.classList.add('show');
+    hud.toastTimer = 4;
+  };
 
-export function updateHud(hud, game, dt) {
-  if (hud.toastTimer > 0) {
-    hud.toastTimer -= dt;
-    if (hud.toastTimer <= 0) hud.toast.classList.remove('show');
-  }
-  // Wanted stars.
-  let stars = '';
-  for (let i = 0; i < 5; i++) stars += i < game.police.wanted ? '★' : '☆';
-  if (hud.stars.textContent !== stars) hud.stars.textContent = stars;
-  hud.stars.classList.toggle('hot', game.police.wanted > 0);
-  const cashText = money(game.cash);
-  if (hud.cash.textContent !== cashText) hud.cash.textContent = cashText;
-  const hp = Math.max(0, Math.round(game.player.health));
-  hud.healthFill.style.width = hp + '%';
-  hud.healthFill.classList.toggle('low', hp < 30);
-  hud.healthText.textContent = hp;
-  const inCar = game.player.inCar;
-  hud.speed.textContent = inCar ? Math.round(Math.abs(game.player.car.speed) * 0.36) + ' km/h' : '';
-  hud.carName.textContent = inCar ? game.player.car.model.name : 'On foot';
-  drawMinimap(hud, game);
-}
+  hud.showStory = (title, text) => {
+    hud.menuTitle.textContent = title;
+    hud.menuBody.textContent = text;
+    hud.menuHint.textContent = 'Press Enter or click to continue';
+    hud.menu.classList.remove('hidden');
+    hud.menu.dataset.kind = 'story';
+  };
 
-export function setMissionText(hud, title, text) {
-  hud.missionTitle.textContent = title;
-  hud.missionText.textContent = text;
-}
+  hud.showRaceResult = (win, place, prize, name) => {
+    hud.menuTitle.textContent = win ? 'Race Won!' : `Finished ${place}`;
+    hud.menuBody.textContent = `${name} — ${place}${place === 1 ? 'st' : place === 2 ? 'nd' : place === 3 ? 'rd' : 'th'} place. Prize ${money(prize)}.`;
+    hud.menuHint.textContent = 'Press Enter or click to continue';
+    hud.menu.classList.remove('hidden');
+    hud.menu.dataset.kind = 'story';
+  };
 
-function drawMinimap(hud, game) {
-  const ctx = hud.mapCtx;
-  const S = 180;
-  const scale = S / 3400;
-  ctx.clearRect(0, 0, S, S);
-  // Water and sand.
-  ctx.fillStyle = '#3aa7a3';
-  ctx.fillRect(0, 0, S, S);
-  ctx.fillStyle = '#e8d8a0';
-  ctx.fillRect(0, S - 14, S, 14);
-  // City ground.
-  ctx.fillStyle = '#7fae6e';
-  ctx.fillRect(0, 0, S, S - 14);
-  // Roads.
-  ctx.fillStyle = '#3d3d4d';
-  for (const a of game.city.avenues) ctx.fillRect(a * scale - 2, 0, 4, S);
-  for (const s of game.city.streets) ctx.fillRect(0, s * scale - 2, S, 4);
-  // Buildings, as darker blocks, so the map reads as a city.
-  ctx.fillStyle = 'rgba(60,70,60,0.55)';
-  for (const b of game.city.buildings) {
-    ctx.fillRect(b.x * scale, b.y * scale, Math.max(1.5, b.w * scale), Math.max(1.5, b.h * scale));
-  }
-  // Docks.
-  ctx.fillStyle = '#8a6d4b';
-  ctx.fillRect(3120 * scale, 400 * scale, 240 * scale, 2200 * scale);
-  // Mission / job blip.
-  const blip = missionBlip(game);
-  if (blip) {
-    const pulse = 5 + Math.sin(game.time * 6) * 2;
-    ctx.fillStyle = '#ffd60a';
+  hud.raceCount = (text) => {
+    hud.raceCountEl.textContent = String(text);
+    hud.raceCountEl.classList.remove('hidden');
+    if (text === 'GO!') setTimeout(() => hud.raceCountEl.classList.add('hidden'), 800);
+  };
+
+  hud.hideMenu = () => {
+    hud.menu.classList.add('hidden');
+  };
+
+  hud.showBusted = (fine) => {
+    hud.busted.classList.remove('hidden');
+    hud.busted.querySelector('.big').textContent = 'BUSTED';
+    hud.busted.querySelector('.sub').textContent = `The Isle PD took ${money(fine)} and dropped you at the safehouse. Press Enter to continue.`;
+  };
+
+  hud.showWasted = () => {
+    hud.busted.classList.remove('hidden');
+    hud.busted.querySelector('.big').textContent = 'WASTED';
+    hud.busted.querySelector('.sub').textContent = 'Juno is down. The crew dragged her to the safehouse. Press Enter to continue.';
+  };
+
+  hud.hideBusted = () => {
+    hud.busted.classList.add('hidden');
+  };
+
+  hud.toggleCrewPanel = (game) => {
+    const open = hud.crewPanel.classList.toggle('hidden');
+    if (open) return;
+    const rows = game.crew.members.map((m) => {
+      const status = m.recruited
+        ? (m.riding ? 'Riding with you' : 'Following')
+        : `Needs: ${m.recruit.type === 'story' ? 'story' : `${m.recruit.min} standing in ${m.recruit.district}`}`;
+      return `<div class="crew-row"><b style="color:#${m.color.toString(16).padStart(6, '0')}">${m.name}</b> — ${m.role}<br><span class="dim">${m.desc}</span><br><span class="dim">${status}</span></div>`;
+    }).join('');
+    hud.crewPanel.innerHTML = `<h3>Crew</h3>${rows}<div class="dim">Press C to close. Dario and Ilya join when your standing is high enough.</div>`;
+  };
+
+  hud.setScreen = (screen) => {
+    const title = $('title');
+    const paused = $('paused');
+    if (title) title.classList.toggle('hidden', screen !== 'title');
+    if (paused) paused.classList.toggle('hidden', screen !== 'paused');
+    hud.root.classList.toggle('hidden', screen === 'title');
+    if (screen === 'title') hud.hideBusted();
+  };
+
+  // Draw the island from above: sea, land, roads, volcano, districts, blips.
+  hud.drawMinimap = (game) => {
+    const ctx = hud.mapCtx;
+    if (!ctx) return;
+    const S = 180;
+    const k = S / 3400;
+    ctx.clearRect(0, 0, S, S);
+    ctx.fillStyle = '#1e7a8a';
+    ctx.fillRect(0, 0, S, S);
+    ctx.fillStyle = '#5f7a4a';
     ctx.beginPath();
-    ctx.arc(blip.x * scale, blip.y * scale, pulse, 0, Math.PI * 2);
+    ctx.arc(1700 * k, 1700 * k, 1650 * k, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-  }
-  // Player arrow.
-  const p = game.player;
-  ctx.save();
-  ctx.translate(p.x * scale, p.y * scale);
-  ctx.rotate(p.angle);
-  ctx.fillStyle = '#fff';
-  ctx.beginPath();
-  ctx.moveTo(7, 0);
-  ctx.lineTo(-5, -5);
-  ctx.lineTo(-5, 5);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = '#111';
-  ctx.lineWidth = 1;
-  ctx.stroke();
-  ctx.restore();
-  // Police dots.
-  ctx.fillStyle = '#4cc9f0';
-  for (const c of game.cars) {
-    if (c.driver === 'police' && !c.dead) {
+    // District tints.
+    for (const d of DISTRICTS) {
+      ctx.fillStyle = `#${d.color.toString(16).padStart(6, '0')}55`;
       ctx.beginPath();
-      ctx.arc(c.x * scale, c.y * scale, 2.5, 0, Math.PI * 2);
+      ctx.arc(d.center.x * k, d.center.y * k, 330 * k, 0, Math.PI * 2);
       ctx.fill();
     }
-  }
-}
-
-function missionBlip(game) {
-  const m = game.mission;
-  if (m.active) {
-    const def = missionDef(game);
-    if (!def) return null;
-    const step = def.steps[m.step];
-    if (!step) return null;
-    if (step.place) return game.city.places[step.place];
-    if (step.type === 'collect' && m.data.crates) {
-      const next = m.data.crates.find((c) => !c.taken);
-      if (next) return next;
+    // Roads.
+    ctx.strokeStyle = '#3d3a38';
+    ctx.lineWidth = 2;
+    for (const a of AVENUES) {
+      ctx.beginPath();
+      ctx.moveTo(a * k, 0);
+      ctx.lineTo(a * k, S);
+      ctx.stroke();
     }
-    if (step.type === 'chase' && m.data.targetCar) return m.data.targetCar;
-    if (step.type === 'stealCar') return game.city.places[step.place];
-  }
-  if (m.sideJob) return m.sideJob.target;
-  if (!m.active && m.index < game.missionDefs.length) return game.city.places.safehouse;
-  return null;
-}
+    for (const s of STREETS) {
+      ctx.beginPath();
+      ctx.moveTo(0, s * k);
+      ctx.lineTo(S, s * k);
+      ctx.stroke();
+    }
+    // Volcano.
+    ctx.fillStyle = '#ff5a00';
+    ctx.beginPath();
+    ctx.arc(VOLCANO.x * k, VOLCANO.z * k, 7, 0, Math.PI * 2);
+    ctx.fill();
+    // Mission target blip (pulsing).
+    const t = game.mission.target;
+    if (t) {
+      const pulse = 5 + Math.sin(game.time * 5) * 2;
+      ctx.fillStyle = '#ffe14a';
+      ctx.beginPath();
+      ctx.arc(t.x * k, t.z * k, pulse, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#ffe14a';
+      ctx.beginPath();
+      ctx.arc(t.x * k, t.z * k, pulse + 5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    // Race checkpoints.
+    if (game.race.active && game.race.route) {
+      ctx.fillStyle = '#ff8a00';
+      for (const wp of game.race.route.waypoints) {
+        ctx.fillRect(wp.x * k - 2, wp.z * k - 2, 4, 4);
+      }
+    }
+    // Crew (green), cruisers (red).
+    ctx.fillStyle = '#4ad97a';
+    for (const m of game.crew.members) {
+      if (m.recruited && !m.riding && m.mesh) {
+        ctx.beginPath();
+        ctx.arc(m.x * k, m.z * k, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.fillStyle = '#ff2020';
+    for (const c of game.cruisers) {
+      ctx.beginPath();
+      ctx.arc(c.x * k, c.z * k, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Player arrow.
+    const p = game.player;
+    ctx.save();
+    ctx.translate(p.x * k, p.z * k);
+    ctx.rotate(p.angle);
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.moveTo(7, 0);
+    ctx.lineTo(-5, -4);
+    ctx.lineTo(-5, 4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  };
 
-function missionDef(game) {
-  const idx = game.mission.index;
-  return idx >= 0 && idx < game.missionDefs.length ? game.missionDefs[idx] : null;
-}
+  hud.update = (game, dt) => {
+    if (hud.toastTimer > 0) {
+      hud.toastTimer -= dt;
+      if (hud.toastTimer <= 0) hud.toastEl.classList.remove('show');
+    }
+    hud.cash.textContent = money(game.cash);
+    hud.healthFill.style.width = `${Math.max(0, game.player.health)}%`;
+    hud.healthText.textContent = `${Math.max(0, Math.round(game.player.health))}`;
+    const stars = '★'.repeat(game.police.stars) + '☆'.repeat(5 - game.police.stars);
+    hud.stars.textContent = stars;
+    hud.stars.classList.toggle('hot', game.police.stars > 0);
+    if (game.car) {
+      hud.speed.textContent = `${Math.round(Math.abs(game.car.speed) * 0.36)}`;
+      hud.carName.textContent = game.car.model.name;
+    } else {
+      hud.speed.textContent = '0';
+      hud.carName.textContent = 'On foot';
+    }
+    // Mission tracker.
+    const step = currentStepDef(game.mission);
+    if (game.mission.active && step) {
+      hud.missionTitle.textContent = missionTitle(game.mission);
+      let text = step.label;
+      if (step.type === 'collect') {
+        text += ` — ${game.mission.collected}/${step.count}`;
+      }
+      if (game.mission.target) {
+        const d = Math.round(dist(game.player.x, game.player.z, game.mission.target.x, game.mission.target.z));
+        text += ` — ${d}m`;
+      }
+      hud.missionText.textContent = text;
+    } else if (game.mission.active && game.mission.sideJob) {
+      hud.missionTitle.textContent = missionTitle(game.mission);
+      hud.missionText.textContent = game.mission.target ? game.mission.target.label : 'Courier run';
+    } else {
+      hud.missionTitle.textContent = 'FREE ROAM';
+      hud.missionText.textContent = `Next job: ${missionTitle(game.mission)} — press J to start, R near a race start to race`;
+    }
+    // District standing strip.
+    hud.districtsEl.innerHTML = game.standing.list().map((d) => {
+      const pct = ((d.score + 100) / 200) * 100;
+      const cls = d.score >= 20 ? 'good' : d.score <= -20 ? 'bad' : '';
+      return `<div class="dist ${cls}"><span>${d.name}</span><div class="bar"><i style="width:${pct}%"></i></div><b>${d.score > 0 ? '+' : ''}${d.score}</b></div>`;
+    }).join('');
+    // Crew strip.
+    hud.crewEl.innerHTML = game.crew.members.map((m) => {
+      const cls = m.recruited ? (m.riding ? 'riding' : 'in') : 'out';
+      return `<span class="crew-dot ${cls}" style="--c:#${m.color.toString(16).padStart(6, '0')}">${m.name.split(' ')[0]}</span>`;
+    }).join('');
+    // Race HUD.
+    if (game.race.active) {
+      hud.raceHud.classList.remove('hidden');
+      hud.racePos.textContent = `${game.race.position}${game.race.position === 1 ? 'st' : game.race.position === 2 ? 'nd' : game.race.position === 3 ? 'rd' : 'th'}`;
+      hud.raceCp.textContent = `Checkpoint ${Math.min(game.race.cp + 1, game.race.route.waypoints.length)}/${game.race.route.waypoints.length}`;
+    } else {
+      hud.raceHud.classList.add('hidden');
+      hud.raceCountEl.classList.add('hidden');
+    }
+    hud.drawMinimap(game);
+  };
 
-export function showMenu(hud, kind, data) {
-  hud.menu.classList.remove('hidden');
-  hud.busted.classList.add('hidden');
-  if (kind === 'title') {
-    hud.menuTitle.textContent = 'SOLMAR BAY';
-    hud.menuBody.innerHTML =
-      '<p class="tagline">An open-world crime story in the sun.</p>' +
-      '<p>Leo Marín is home — broke, wanted, and one job away from everything.</p>' +
-      '<p class="controls">WASD / Arrows — walk &amp; drive &nbsp;·&nbsp; E — enter / exit car<br>' +
-      'Mouse / F — shoot &nbsp;·&nbsp; Space — handbrake &nbsp;·&nbsp; J — start mission &nbsp;·&nbsp; P — pause</p>' +
-      (data?.hasSave ? '<p class="save-note">A save was found — press Enter to continue it.</p>' : '');
-    hud.menuHint.textContent = 'Press Enter or click to play';
-  } else if (kind === 'paused') {
-    hud.menuTitle.textContent = 'PAUSED';
-    hud.menuBody.innerHTML =
-      '<p>Solmar Bay waits for no one — except right now.</p>' +
-      '<p class="controls">M — mute &nbsp;·&nbsp; S — save now &nbsp;·&nbsp; R — restart the current mission</p>';
-    hud.menuHint.textContent = 'Press P or Esc to keep playing';
-  } else if (kind === 'complete') {
-    hud.menuTitle.textContent = 'JOB DONE';
-    hud.menuBody.innerHTML =
-      `<p class="big">${data.title}</p><p>You earned <b>${money(data.reward)}</b>.</p>` +
-      (data.next
-        ? `<p>Next up: <b>${data.next}</b> — press J when you are ready.</p>`
-        : '<p class="big">You are the King of the Bay.</p><p>Free roam is yours. Courier runs pay cash — press J.</p>');
-    hud.menuHint.textContent = 'Press Enter to keep playing';
-  } else if (kind === 'failed') {
-    hud.menuTitle.textContent = 'JOB FAILED';
-    hud.menuBody.innerHTML = `<p>${data.reason}</p><p>Press J to try the job again.</p>`;
-    hud.menuHint.textContent = 'Press Enter to keep playing';
-  }
-}
-
-export function hideMenu(hud) {
-  hud.menu.classList.add('hidden');
-}
-
-export function showBusted(hud, kind) {
-  hud.busted.classList.remove('hidden');
-  hud.busted.querySelector('h1').textContent = kind === 'busted' ? 'BUSTED' : 'WASTED';
-  hud.busted.querySelector('p').textContent =
-    kind === 'busted'
-      ? 'The Solmar Bay PD caught up with Leo. The fine stings, the story goes on.'
-      : 'Leo is down — but the Bay never keeps a good driver down for long.';
-}
-
-export function hideBusted(hud) {
-  hud.busted.classList.add('hidden');
+  return hud;
 }

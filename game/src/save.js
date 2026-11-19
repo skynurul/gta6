@@ -1,16 +1,21 @@
-// save.js — Solmar Bay saves to localStorage: cash, missions done, and where
-// Leo was standing. Loading restores the story exactly where it was left.
-const KEY = 'solmarbay.save.v1';
+// save.js — Ember Isle saves to localStorage: cash, the story's place in the
+// three arcs, district standing, the crew, and where Juno was standing.
+// Loading restores the story exactly where it was left.
+const KEY = 'emberisle.save.v1';
 
 export function saveGame(game) {
   try {
     const data = {
       cash: game.cash,
       missionsDone: game.mission.done,
-      nextMission: game.mission.index,
+      nextArc: game.mission.arc,
+      nextStage: game.mission.stage,
+      standing: game.standing.scores,
+      crew: game.crew.members.map((m) => ({ id: m.id, recruited: m.recruited })),
       x: Math.round(game.player.x),
-      y: Math.round(game.player.y),
+      z: Math.round(game.player.z),
       health: Math.round(game.player.health),
+      racesWon: game.stats.racesWon,
       stats: game.stats,
       time: Date.now(),
     };

@@ -1,12 +1,12 @@
-// Solmar Bay — the gta6-01 entry program (Node 22, standard library only).
+// Ember Isle — the gta6-01 entry program (Node 22, standard library only).
 //
-// The game lives in this directory's game/ folder as plain static files that a
-// desktop browser loads offline: game/index.html plus its ES modules, no
-// library and no network request. This program hands the game in by copying
-// game/ and screenshots/ next to this file into /output and writing
-// /output/dossier.json, the summary the judge reads, with the vendored
-// make.fun library. Outside the grader's container, MAKEFUN_OUTPUT_DIR
-// stands in for /output, so a local run looks like:
+// The game lives in this directory's game/ folder as plain static files that
+// a desktop browser loads offline: game/index.html plus its ES modules and
+// the vendored Three.js file, with no network request at all. This program
+// hands the game in by copying game/ and screenshots/ next to this file into
+// /output and writing /output/dossier.json — the summary the judge reads —
+// using the vendored make.fun library. Outside the grader's container,
+// MAKEFUN_OUTPUT_DIR stands in for /output, so a local run looks like:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 
 import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -41,3 +41,4 @@ const dossier = buildDossier(outputDir, {
 });
 
 writeFileSync(join(outputDir, 'dossier.json'), dossier);
+console.log(`dossier written to ${join(outputDir, 'dossier.json')}`);

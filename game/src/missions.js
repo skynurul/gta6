@@ -1,271 +1,435 @@
-// missions.js — the story of Leo Marín and the five jobs that take him from a
-// broke courier to the King of the Bay, plus repeatable courier runs in free roam.
-import { clamp, dist, money } from './util.js';
-import { driveCar, makeCar, CAR_MODELS } from './vehicles.js';
-import { addHeat, setWanted } from './police.js';
+// missions.js — Ember Isle's story: three arcs, three stages each, plus
+// repeatable courier runs when the story is done. Steps are small and
+// checkable: go somewhere, steal a car, collect crates, chase a courier,
+// win a race. Each stage has its own intro and outro.
+import { PLACES, COASTAL_WAYPOINTS, CLIMB_WAYPOINTS, terrainHeight, districtFor } from './terrain3d.js';
+import { createCar, steerCarToward, driveCar, syncCarMesh } from './vehicles3d.js';
+import { addHeat } from './police.js';
+import { dist } from './util.js';
 
-export const STORY = {
-  hero: 'Leo Marín',
-  city: 'Solmar Bay',
-  intro: 'Leo Marín came home to Solmar Bay with $40 and a dead phone. The Bay remembers him — and the Harbor Crew remembers what he owes.',
-};
-
-export const MISSIONS = [
+export const ARCS = [
   {
-    id: 'first-wheels',
-    title: 'First Wheels',
-    reward: 300,
-    briefing: 'Rosa left a sedan by your safehouse. Get in it and bring the dock parcel to the Marina.',
-    steps: [
-      { type: 'enterCar', text: 'Get in the sedan by the safehouse' },
-      { type: 'goto', place: 'docks', radius: 90, text: 'Drive to the Solmar Docks' },
-      { type: 'goto', place: 'marina', radius: 80, text: 'Deliver the parcel to the Marina' },
+    id: 'crown', title: 'Cinder Crown', district: 'sands',
+    intro: 'Juno came home to race. The Coastal Ring decides who owns Ember Isle after dark.',
+    stages: [
+      {
+        title: 'First Heat', brief: 'Win or place in the Coastal Ring Sprint.',
+        reward: 400,
+        intro: 'Mara: "The ring is fast and the locals are faster. Show them you are home."',
+        outro: 'The crowd at Palma Sands chants Juno\'s name. The crown is in play.',
+        steps: [
+          { type: 'enterCar', label: 'Get in a car' },
+          { type: 'goto', x: PLACES.raceCoastal.x, z: PLACES.raceCoastal.z, radius: 60, label: 'Reach the Coastal Ring start' },
+          { type: 'race', route: 'coastal', needWin: false, label: 'Race the Coastal Ring (press R at the start)' },
+        ],
+      },
+      {
+        title: 'Coastal Ring', brief: 'Win the Coastal Ring Sprint outright.',
+        reward: 700,
+        intro: 'Vex holds the ring record. Beat him and the whole island will know.',
+        outro: 'Vex shakes Juno\'s hand. "You are the real thing, Reyes."',
+        steps: [
+          { type: 'goto', x: PLACES.raceCoastal.x, z: PLACES.raceCoastal.z, radius: 60, label: 'Reach the Coastal Ring start' },
+          { type: 'race', route: 'coastal', needWin: true, label: 'Win the Coastal Ring (press R at the start)' },
+        ],
+      },
+      {
+        title: 'King of the Climb', brief: 'Win the Volcano Climb Circuit.',
+        reward: 1000,
+        intro: 'The climb sorts the brave from the fast. Mount Cinder wants 10 standing before it lets you run.',
+        outro: 'Juno Reyes, King of the Climb. The volcano itself seems to approve.',
+        steps: [
+          { type: 'goto', x: PLACES.raceClimb.x, z: PLACES.raceClimb.z, radius: 60, label: 'Reach the Volcano Climb start' },
+          { type: 'race', route: 'climb', needWin: true, label: 'Win the Volcano Climb (press R at the start)' },
+        ],
+      },
     ],
   },
   {
-    id: 'hot-wheels',
-    title: 'Hot Wheels',
-    reward: 600,
-    briefing: 'A Marina GT is parked at the Marina, keys in it. Take it — and take it fast — then bring it to Rosa\'s Garage.',
-    steps: [
-      { type: 'stealCar', model: 5, place: 'marina', radius: 60, text: 'Steal the Marina GT at the Marina' },
-      { type: 'goto', place: 'garage', radius: 90, text: 'Deliver the GT to Rosa\'s Garage', inCar: true },
+    id: 'harbor', title: 'Ash Harbor', district: 'ash',
+    intro: 'The docks of Port Ash answer to a rival crew. Juno is going to take them back.',
+    stages: [
+      {
+        title: 'Hot Wheels', brief: 'Steal the Cinder GT at the docks and deliver it to the Slagworks garage.',
+        reward: 600,
+        intro: 'Dario: "There is a Cinder GT sitting on the docks, keys in it. Take it home."',
+        outro: 'The GT purrs in the garage. The docks crew knows someone new is in town.',
+        steps: [
+          { type: 'goto', x: PLACES.docks.x, z: PLACES.docks.z, radius: 80, label: 'Reach the Port Ash docks' },
+          { type: 'stealCar', model: 'gt', x: 3120, z: 1420, label: 'Steal the Cinder GT' },
+          { type: 'goto', x: PLACES.garage.x, z: PLACES.garage.z, radius: 50, label: 'Deliver the GT to the Slagworks garage' },
+        ],
+      },
+      {
+        title: 'Crate Run', brief: 'Collect 3 crates on the docks on foot.',
+        reward: 900,
+        intro: 'Three crates of "machine parts" need legs, not wheels. Walk in, walk out.',
+        outro: 'The crates are stashed. The harbor crew is starting to talk about Juno.',
+        steps: [
+          { type: 'goto', x: PLACES.docks.x, z: PLACES.docks.z, radius: 80, label: 'Reach the Port Ash docks' },
+          {
+            type: 'collect', count: 3, label: 'Collect the dock crates (walk over them)',
+            points: [
+              { x: 3080, z: 1000 }, { x: 3160, z: 1500 }, { x: 3100, z: 2000 },
+            ],
+          },
+        ],
+      },
+      {
+        title: 'The Courier', brief: 'Stop the rival courier, take the case, deliver it to the safehouse.',
+        reward: 1500,
+        intro: 'A rival courier is running the harbor loop with the week\'s take. Ram him, or shoot his car to a stop.',
+        outro: 'The case is Juno\'s. Port Ash belongs to the crew now.',
+        steps: [
+          { type: 'chase', label: 'Stop the courier (ram or shoot his car)' },
+          { type: 'collect', count: 1, label: 'Grab the case from the stopped courier', points: [] },
+          { type: 'goto', x: PLACES.safehouse.x, z: PLACES.safehouse.z, radius: 50, label: 'Deliver the case to the safehouse' },
+        ],
+      },
     ],
   },
   {
-    id: 'heat-wave',
-    title: 'Heat Wave',
-    reward: 900,
-    briefing: 'The parcel is hot and so are you: the PD is already rolling. Lose them or outrun them — just get the package to the Azure Penthouse.',
-    steps: [
-      { type: 'goto', place: 'penthouse', radius: 90, text: 'Reach the Azure Penthouse with the package' },
+    id: 'fire', title: 'Fire in the Mountain', district: 'cinder',
+    intro: 'The volcano job: one last run up Mount Cinder, and the island is Juno\'s.',
+    stages: [
+      {
+        title: 'The Ascent', brief: 'Deliver the package to the volcano base.',
+        reward: 900,
+        intro: 'Ilya: "The package goes to the base camp. The PD knows the road. Keep it under two stars."',
+        outro: 'Package delivered. The mountain road is Juno\'s now.',
+        steps: [
+          { type: 'enterCar', label: 'Get in a car' },
+          { type: 'goto', x: PLACES.volcanoBase.x, z: PLACES.volcanoBase.z, radius: 60, label: 'Reach the volcano base' },
+        ],
+      },
+      {
+        title: 'Ember Harvest', brief: 'Collect 4 ember crates on the volcano slopes, on foot. Mind the lava.',
+        reward: 1200,
+        intro: 'Ember crates glow on the slopes. They are worth a fortune — and the lava is not a joke.',
+        outro: 'Four crates, no burns. The crew is rich and Juno is legend.',
+        steps: [
+          { type: 'goto', x: PLACES.emberField.x, z: PLACES.emberField.z, radius: 90, label: 'Reach the Ember Field' },
+          {
+            type: 'collect', count: 4, label: 'Collect the ember crates (walk over them)',
+            points: [
+              { x: 1480, z: 620 }, { x: 1840, z: 540 }, { x: 1560, z: 780 }, { x: 1920, z: 700 },
+            ],
+          },
+        ],
+      },
+      {
+        title: 'Summit Run', brief: 'Stop the rival runner on the climb road, take the case, deliver it to the summit.',
+        reward: 2500,
+        intro: 'The rival crew is running the climb with the summit case. Stop them on the mountain, take it to the top.',
+        outro: 'Juno stands at the Summit Overlook, case in hand, the whole island below. Ember Isle is hers.',
+        steps: [
+          { type: 'chase', route: 'climb', label: 'Stop the runner on the climb road' },
+          { type: 'collect', count: 1, label: 'Grab the case from the stopped runner', points: [] },
+          { type: 'goto', x: PLACES.summit.x, z: PLACES.summit.z, radius: 50, label: 'Deliver the case to the Summit Overlook' },
+        ],
+      },
     ],
-    onStart: (game) => setWanted(game.police, 2),
-  },
-  {
-    id: 'harbor-hustle',
-    title: 'Harbor Hustle',
-    reward: 1200,
-    briefing: 'Three crates on the docks, on foot, with the harbor patrol watching. Grab them all, then walk them to Rosa\'s Garage.',
-    steps: [
-      { type: 'collect', count: 3, place: 'docks', radius: 260, text: 'Collect the crates on the docks (0/3)' },
-      { type: 'goto', place: 'garage', radius: 90, text: 'Bring the crates to Rosa\'s Garage' },
-    ],
-    onStart: (game) => setWanted(game.police, 1),
-  },
-  {
-    id: 'king-of-the-bay',
-    title: 'King of the Bay',
-    reward: 2500,
-    briefing: 'The Harbor Crew\'s courier is running the briefcase across town. Stop his car, take the case, and deliver it to the Azure Penthouse. The whole PD will be on you.',
-    steps: [
-      { type: 'chase', text: 'Stop the courier\'s car' },
-      { type: 'goto', place: 'penthouse', radius: 90, text: 'Deliver the briefcase to the Azure Penthouse' },
-    ],
-    onStart: (game) => setWanted(game.police, 3),
   },
 ];
 
-export function makeMissionState() {
+export function createMission() {
   return {
-    index: 0, // next mission to play
+    arc: 0,
+    stage: 0,
     step: 0,
+    done: [],
     active: false,
-    data: {},
-    done: [], // completed mission ids
+    target: null,
+    courier: null,
+    collectPoints: [],
+    collected: 0,
     sideJob: null,
-    failed: null,
+    storyDone: false,
   };
 }
 
-export function startMission(game, index) {
-  const def = MISSIONS[index];
-  if (!def) return false;
-  game.mission.active = true;
-  game.mission.index = index;
-  game.mission.step = 0;
-  game.mission.data = {};
-  game.mission.failed = null;
-  setupStep(game, def, 0);
-  if (def.onStart) def.onStart(game);
-  return true;
+export function currentStageDef(m) {
+  if (m.arc >= ARCS.length) return null;
+  return ARCS[m.arc].stages[m.stage];
 }
 
-function setupStep(game, def, stepIndex) {
-  const step = def.steps[stepIndex];
-  const data = game.mission.data;
-  if (!step) return;
-  if (step.type === 'stealCar') {
-    const place = game.city.places[step.place];
-    const model = CAR_MODELS[step.model];
-    const car = makeCar(model, place.x + 40, place.y, 0, { driver: null, color: '#ffd60a' });
-    game.cars.push(car);
-    data.targetCar = car;
-  }
-  if (step.type === 'collect') {
-    data.crates = [];
-    data.collected = 0;
-    const place = game.city.places[step.place];
-    const spots = [
-      { x: place.x - 120, y: place.y - 300 },
-      { x: place.x + 60, y: place.y + 100 },
-      { x: place.x - 60, y: place.y + 500 },
-    ];
-    for (const s of spots) data.crates.push({ x: s.x, y: s.y, taken: false });
-  }
-  if (step.type === 'chase') {
-    const p = game.player;
-    const car = makeCar(CAR_MODELS[1], p.x + 500, p.y - 200, Math.PI, { driver: 'rival', color: '#8338ec' });
-    car.health = 100;
-    game.cars.push(car);
-    data.targetCar = car;
-    data.fleeTarget = { x: p.x - 1200, y: p.y - 800 };
-  }
+export function currentStepDef(m) {
+  const stage = currentStageDef(m);
+  if (!stage) return null;
+  return stage.steps[m.step];
 }
 
-export function currentObjective(game) {
+export function missionTitle(m) {
+  const stage = currentStageDef(m);
+  if (!stage) return m.sideJob ? 'Courier Run' : 'Free Roam';
+  return `${ARCS[m.arc].title} — ${stage.title} (${m.stage + 1}/3)`;
+}
+
+export function startNext(game) {
   const m = game.mission;
-  if (!m.active) {
-    if (m.index >= MISSIONS.length) return 'Free roam — King of the Bay. Press J for a courier run.';
-    return `Press J to start: ${MISSIONS[m.index].title}`;
+  if (m.active) {
+    game.hud.toast('A mission is already running', 'bad');
+    return;
   }
-  const def = MISSIONS[m.index];
-  const step = def.steps[m.step];
-  if (!step) return def.title;
-  let text = step.text;
-  if (step.type === 'collect') {
-    text = `Collect the crates on the docks (${m.data.collected || 0}/${step.count})`;
+  if (m.storyDone) {
+    startSideJob(game);
+    return;
   }
-  return text;
-}
-
-// Advance the active mission. Returns { type: 'step'|'complete'|'failed', ... }.
-export function updateMission(game, dt) {
-  const m = game.mission;
-  if (!m.active) return null;
-  const def = MISSIONS[m.index];
-  const step = def.steps[m.step];
-  if (!step) return null;
-  const p = game.player;
-
-  const advance = () => {
-    m.step++;
-    if (m.step >= def.steps.length) {
-      completeMission(game, def);
-      return { type: 'complete', mission: def };
-    }
-    setupStep(game, def, m.step);
-    return { type: 'step', mission: def, step: def.steps[m.step] };
-  };
-
-  if (step.type === 'enterCar') {
-    if (p.inCar) return advance();
-  } else if (step.type === 'goto') {
-    const place = game.city.places[step.place];
-    if (dist(p.x, p.y, place.x, place.y) < step.radius) {
-      if (step.inCar && !p.inCar) return null;
-      return advance();
-    }
-  } else if (step.type === 'stealCar') {
-    if (p.inCar && p.car === m.data.targetCar) {
-      addHeat(game.police, 14);
-      return advance();
-    }
-  } else if (step.type === 'collect') {
-    if (!p.inCar) {
-      for (const c of m.data.crates) {
-        if (!c.taken && dist(p.x, p.y, c.x, c.y) < 46) {
-          c.taken = true;
-          m.data.collected++;
-          game.audio.pickup();
-          if (m.data.collected >= step.count) return advance();
-          return { type: 'step', mission: def, step };
-        }
-      }
-    }
-  } else if (step.type === 'chase') {
-    const car = m.data.targetCar;
-    if (!car || car.dead || car.health <= 0) {
-      return failMission(game, 'The courier got away.');
-    }
-    // The courier flees away from Leo; ramming it slows and damages it.
-    const flee = m.data.fleeTarget;
-    if (dist(car.x, car.y, flee.x, flee.y) < 200 || dist(car.x, car.y, p.x, p.y) < 500) {
-      m.data.fleeTarget = {
-        x: clamp(p.x + (p.x - car.x) * 2, 200, 3200),
-        y: clamp(p.y + (p.y - car.y) * 2, 200, 3200),
-      };
-    }
-    const want = Math.atan2(m.data.fleeTarget.y - car.y, m.data.fleeTarget.x - car.x);
-    let diff = want - car.angle;
-    while (diff > Math.PI) diff -= Math.PI * 2;
-    while (diff < -Math.PI) diff += Math.PI * 2;
-    driveCar(car, dt, 1, clamp(diff * 2, -1, 1), false);
-    if (dist(p.x, p.y, car.x, car.y) < 70 && p.inCar && Math.abs((p.car?.speed || 0)) > 120) {
-      car.health -= 22 * dt * 4;
-    }
-    if (car.health <= 28) {
-      car.speed = Math.max(0, car.speed - 200 * dt);
-      if (dist(p.x, p.y, car.x, car.y) < 60 && !p.inCar) {
-        return advance();
-      }
-    }
-  }
-  return null;
-}
-
-function completeMission(game, def) {
-  const m = game.mission;
-  m.active = false;
-  m.done.push(def.id);
-  m.index++;
-  game.cash += def.reward;
+  const stage = currentStageDef(m);
+  if (!stage) return;
+  m.active = true;
+  m.step = 0;
+  m.collected = 0;
+  m.collectPoints = [];
+  const arc = ARCS[m.arc];
+  game.hud.showStory(`${arc.title} — ${stage.title}`, stage.intro);
   game.audio.jingle();
-  game.audio.cash();
-  game.stats.missions++;
+  setupStep(game);
+}
+
+function setupStep(game) {
+  const m = game.mission;
+  const step = currentStepDef(m);
+  if (!step) return;
+  m.target = null;
+  if (step.type === 'goto') {
+    m.target = { x: step.x, z: step.z, label: step.label };
+  } else if (step.type === 'collect') {
+    m.collectPoints = (step.points || []).map((p) => ({ ...p, taken: false }));
+    m.collected = 0;
+    m.target = m.collectPoints[0]
+      ? { x: m.collectPoints[0].x, z: m.collectPoints[0].z, label: step.label }
+      : null;
+  } else if (step.type === 'stealCar') {
+    const car = createCar(step.model, step.x, step.z, 0.6, { stealTarget: true, parked: true });
+    game.scene.add(car.mesh);
+    game.cars.push(car);
+    m.target = { x: step.x, z: step.z, label: step.label };
+  } else if (step.type === 'chase') {
+    spawnCourier(game, step.route === 'climb' ? CLIMB_WAYPOINTS : COASTAL_WAYPOINTS);
+    m.target = { x: m.courier.x, z: m.courier.z, label: step.label, follow: true };
+  } else if (step.type === 'race') {
+    const start = step.route === 'climb' ? PLACES.raceClimb : PLACES.raceCoastal;
+    m.target = { x: start.x, z: start.z, label: step.label };
+  }
+}
+
+function spawnCourier(game, waypoints) {
+  const m = game.mission;
+  const start = waypoints[0];
+  const courier = createCar('coupe', start.x, start.z, 0, { courier: true });
+  courier.hp = 100;
+  courier.waypoints = waypoints;
+  courier.wp = 1;
+  courier.stopped = false;
+  game.scene.add(courier.mesh);
+  game.cars.push(courier);
+  m.courier = courier;
+}
+
+function removeCourier(game) {
+  const m = game.mission;
+  if (!m.courier) return;
+  game.scene.remove(m.courier.mesh);
+  const i = game.cars.indexOf(m.courier);
+  if (i >= 0) game.cars.splice(i, 1);
+  m.courier = null;
+}
+
+function completeStep(game) {
+  const m = game.mission;
+  m.step++;
+  const stage = currentStageDef(m);
+  if (m.step >= stage.steps.length) {
+    completeStage(game);
+    return;
+  }
+  setupStep(game);
+}
+
+function completeStage(game) {
+  const m = game.mission;
+  const stage = currentStageDef(m);
+  const arc = ARCS[m.arc];
+  game.cash += stage.reward;
+  game.standing.change(game, arc.district, 15, `${stage.title} complete`);
+  game.stats.missionsDone++;
+  m.done.push(`${arc.id}:${m.stage}`);
+  game.hud.showStory('Job Done', `${stage.outro} (+$${stage.reward})`);
+  game.audio.jingle();
+  m.active = false;
+  m.target = null;
+  removeCourier(game);
+  m.stage++;
+  if (m.stage >= arc.stages.length) {
+    m.stage = 0;
+    m.arc++;
+    if (m.arc >= ARCS.length) {
+      m.storyDone = true;
+      game.hud.toast('Story complete — courier runs and races pay out in free roam', 'good');
+    }
+  }
   game.save();
 }
 
-export function failMission(game, reason) {
+function failStage(game, reason) {
   const m = game.mission;
-  m.active = false;
-  m.failed = reason;
+  game.hud.showStory('Job Failed', reason);
   game.audio.fail();
-  // Clean up mission cars.
-  if (m.data.targetCar) m.data.targetCar.dead = true;
-  return { type: 'failed', reason };
+  m.active = false;
+  m.target = null;
+  removeCourier(game);
 }
 
-// Repeatable courier runs after the story: pick a random place, pay on arrival.
-export function startSideJob(game) {
-  const places = Object.values(game.city.places);
-  const from = game.player;
-  let target = places[Math.floor(Math.random() * places.length)];
-  if (dist(from.x, from.y, target.x, target.y) < 600) {
-    target = places[(places.indexOf(target) + 3) % places.length];
-  }
-  game.mission.sideJob = { target, pay: 150 + Math.floor(Math.random() * 250) };
-  return game.mission.sideJob;
-}
-
-export function updateSideJob(game) {
-  const job = game.mission.sideJob;
-  if (!job) return null;
-  const p = game.player;
-  if (dist(p.x, p.y, job.target.x, job.target.y) < 90) {
-    game.cash += job.pay;
-    game.stats.jobs++;
-    game.audio.cash();
-    game.mission.sideJob = null;
-    game.save();
-    return { type: 'jobDone', pay: job.pay };
-  }
-  return null;
-}
-
-export function missionTitle(game) {
+function startSideJob(game) {
   const m = game.mission;
-  if (m.active) return MISSIONS[m.index].title;
-  if (m.index < MISSIONS.length) return MISSIONS[m.index].title;
-  return 'King of the Bay';
+  const spots = [PLACES.docks, PLACES.marina, PLACES.garage, PLACES.safehouse, PLACES.volcanoBase];
+  const a = spots[Math.floor(Math.random() * spots.length)];
+  let b = spots[Math.floor(Math.random() * spots.length)];
+  if (b === a) b = PLACES.safehouse;
+  m.sideJob = { from: a, to: b, step: 0, reward: 200 + Math.floor(Math.random() * 150) };
+  m.active = true;
+  m.target = { x: a.x, z: a.z, label: `Pick up the package at ${a.name}` };
+  game.hud.toast(`Courier run: ${a.name} → ${b.name} ($${m.sideJob.reward})`, 'good');
+}
+
+export function onEnterCar(game, car) {
+  const m = game.mission;
+  if (!m.active) return;
+  const step = currentStepDef(m);
+  if (!step) return;
+  if (step.type === 'enterCar') {
+    completeStep(game);
+    return;
+  }
+  if (step.type === 'stealCar' && car.stealTarget) {
+    game.police.lastCrime = game.time;
+    addHeat(game, 20, 'stolen car');
+    game.standing.change(game, 'ash', -5, 'car stolen in Port Ash');
+    game.hud.toast('Stolen! Get it to the garage', 'bad');
+    completeStep(game);
+  }
+}
+
+export function updateMission(game, dt) {
+  const m = game.mission;
+  if (!m.active) return;
+  const p = game.player;
+
+  // Side job: pick up, then deliver.
+  if (m.sideJob) {
+    const job = m.sideJob;
+    const dest = job.step === 0 ? job.from : job.to;
+    if (dist(p.x, p.z, dest.x, dest.z) < 45) {
+      if (job.step === 0) {
+        job.step = 1;
+        m.target = { x: job.to.x, z: job.to.z, label: `Deliver to ${job.to.name}` };
+        game.hud.toast('Package picked up', 'good');
+        game.audio.pickup();
+      } else {
+        game.cash += job.reward;
+        game.standing.change(game, districtFor(job.to.x, job.to.z).id, 3, 'courier run');
+        game.hud.toast(`Courier run done (+$${job.reward})`, 'good');
+        game.audio.cash();
+        m.sideJob = null;
+        m.active = false;
+        m.target = null;
+        game.save();
+      }
+    }
+    return;
+  }
+
+  const step = currentStepDef(m);
+  if (!step) return;
+
+  // The courier drives his loop until he is stopped.
+  if (step.type === 'chase' && m.courier) {
+    const c = m.courier;
+    if (!c.stopped) {
+      const wp = c.waypoints[c.wp % c.waypoints.length];
+      const ctl = steerCarToward(c, wp.x, wp.z, 260);
+      driveCar(c, ctl, dt, game.island);
+      syncCarMesh(c);
+      if (dist(c.x, c.z, wp.x, wp.z) < 40) c.wp++;
+      if (c.hp <= 0) {
+        c.stopped = true;
+        c.speed = 0;
+        c.vx = 0;
+        c.vz = 0;
+        game.combat.spawnParticles(c.x, terrainHeight(c.x, c.z) + 3, c.z, 20, 50, 50);
+        game.hud.toast('Courier stopped — grab the case', 'good');
+        const stage = currentStageDef(m);
+        const nextStep = stage.steps[m.step + 1];
+        if (nextStep && nextStep.type === 'collect') {
+          nextStep.points = [{ x: c.x + 10, z: c.z }];
+        }
+        completeStep(game);
+      }
+      m.target = { x: c.x, z: c.z, label: step.label, follow: true };
+    }
+    return;
+  }
+
+  if (step.type === 'goto') {
+    if (dist(p.x, p.z, step.x, step.z) < step.radius) {
+      game.audio.pickup();
+      completeStep(game);
+    }
+    return;
+  }
+
+  if (step.type === 'collect') {
+    // On-foot collection: walk over the points.
+    if (game.car) return;
+    for (const pt of m.collectPoints) {
+      if (pt.taken) continue;
+      if (dist(p.x, p.z, pt.x, pt.z) < 10) {
+        pt.taken = true;
+        m.collected++;
+        game.audio.pickup();
+        game.combat.spawnParticles(pt.x, terrainHeight(pt.x, pt.z) + 2, pt.z, 10, 30, 30);
+        const left = m.collectPoints.filter((q) => !q.taken);
+        m.target = left[0] ? { x: left[0].x, z: left[0].z, label: step.label } : null;
+        if (m.collected >= step.count) {
+          game.hud.toast('All collected', 'good');
+          completeStep(game);
+          return;
+        }
+      }
+    }
+    return;
+  }
+
+  if (step.type === 'race') {
+    const res = game.race.lastResult;
+    if (res && !res.consumed && res.route === step.route) {
+      res.consumed = true;
+      if (step.needWin && res.place > 1) {
+        game.hud.toast(`Need 1st place (got ${res.place}) — run it again`, 'bad');
+        return;
+      }
+      completeStep(game);
+    }
+    return;
+  }
+}
+
+// Ramming or shooting the courier wears his car down.
+export function damageCourier(game, amount) {
+  const m = game.mission;
+  if (!m.courier || m.courier.stopped) return;
+  m.courier.hp -= amount;
+  game.combat.spawnParticles(m.courier.x, terrainHeight(m.courier.x, m.courier.z) + 3, m.courier.z, 6, 40, 30);
+}
+
+// Busted or wasted mid-mission: the stage restarts from its first step.
+export function resetMissionOnFail(game) {
+  const m = game.mission;
+  if (!m.active) return;
+  removeCourier(game);
+  m.active = false;
+  m.target = null;
+  m.sideJob = null;
+  failStage(game, 'The job fell apart. Press J to run it again.');
 }

@@ -1,4 +1,6 @@
-// util.js — small math and collision helpers shared by every system of Solmar Bay.
+// util.js — small math helpers shared by every system of Ember Isle.
+// The island lives on the XZ ground plane (Three.js Y is up); headings are
+// angles in that plane, forward = (cos a, 0, sin a).
 export const TAU = Math.PI * 2;
 
 export function clamp(v, lo, hi) {
@@ -7,6 +9,11 @@ export function clamp(v, lo, hi) {
 
 export function lerp(a, b, t) {
   return a + (b - a) * t;
+}
+
+export function smoothstep(a, b, x) {
+  const t = clamp((x - a) / (b - a), 0, 1);
+  return t * t * (3 - 2 * t);
 }
 
 // Shortest signed turn from angle a toward angle b.
@@ -21,17 +28,18 @@ export function angleLerp(a, b, t) {
   return a + angleDiff(a, b) * clamp(t, 0, 1);
 }
 
-export function dist2(ax, ay, bx, by) {
+// Distance on the ground plane.
+export function dist2(ax, az, bx, bz) {
   const dx = bx - ax;
-  const dy = by - ay;
-  return dx * dx + dy * dy;
+  const dz = bz - az;
+  return dx * dx + dz * dz;
 }
 
-export function dist(ax, ay, bx, by) {
-  return Math.sqrt(dist2(ax, ay, bx, by));
+export function dist(ax, az, bx, bz) {
+  return Math.sqrt(dist2(ax, az, bx, bz));
 }
 
-// Deterministic RNG (mulberry32) so the city layout is the same every run.
+// Deterministic RNG (mulberry32) so the island is the same every run.
 export function makeRng(seed) {
   let s = seed >>> 0;
   return function rng() {
@@ -51,25 +59,22 @@ export function randRange(rng, lo, hi) {
   return lo + rng() * (hi - lo);
 }
 
-export function choice(rng, ...items) {
-  return items[Math.floor(rng() * items.length)];
-}
-
-// Push a circle (x, y, r) out of an axis-aligned rectangle. Returns true on hit.
-export function circleVsRect(cx, cy, r, rect) {
+// Push a circle (x, z, r) out of an axis-aligned rectangle on the ground.
+// Returns a push-out vector, or null when there is no overlap.
+export function circleVsRect(cx, cz, r, rect) {
   const nx = clamp(cx, rect.x, rect.x + rect.w);
-  const ny = clamp(cy, rect.y, rect.y + rect.h);
+  const nz = clamp(cz, rect.z, rect.z + rect.d);
   const dx = cx - nx;
-  const dy = cy - ny;
-  const d2 = dx * dx + dy * dy;
+  const dz = cz - nz;
+  const d2 = dx * dx + dz * dz;
   if (d2 >= r * r) return null;
-  if (d2 === 0) return { x: 0, y: -r };
+  if (d2 === 0) return { x: 0, z: -r };
   const d = Math.sqrt(d2);
-  return { x: (dx / d) * (r - d), y: (dy / d) * (r - d) };
+  return { x: (dx / d) * (r - d), z: (dz / d) * (r - d) };
 }
 
-export function pointInRect(px, py, rect) {
-  return px >= rect.x && px <= rect.x + rect.w && py >= rect.y && py <= rect.y + rect.h;
+export function pointInRect(px, pz, rect) {
+  return px >= rect.x && px <= rect.x + rect.w && pz >= rect.z && pz <= rect.z + rect.d;
 }
 
 // Format a number as cash, e.g. 1250 -> "$1,250".
@@ -77,9 +82,14 @@ export function money(n) {
   return '$' + Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
-// Short compass direction for a heading angle.
+// Short compass direction for a heading angle on the XZ plane.
 export function compass(angle) {
   const dirs = ['E', 'SE', 'S', 'SW', 'W', 'NW', 'N', 'NE'];
-  const i = Math.round(((angle % TAU) + TAU) % TAU / (Math.PI / 4)) % 8;
+  const i = Math.round((((angle % TAU) + TAU) % TAU) / (Math.PI / 4)) % 8;
   return dirs[i];
+}
+
+// Turn a heading angle into a Three.js rotation.y (object forward +X at 0).
+export function headingToRotationY(angle) {
+  return -angle;
 }

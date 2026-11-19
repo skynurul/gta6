@@ -1,6 +1,6 @@
-// audio.js — every sound in Solmar Bay is synthesized live with WebAudio.
+// audio.js — every sound in Ember Isle is synthesized live with WebAudio.
 // No audio files, no network: oscillators and filtered noise, plus an original
-// sun-soaked groove sequenced from a small bass line and a bright lead.
+// volcanic groove — a D-minor bass walk with a bright, ember-coloured lead.
 export class AudioSys {
   constructor() {
     this.ctx = null;
@@ -29,7 +29,7 @@ export class AudioSys {
       this.master.gain.value = 0.55;
       this.master.connect(this.ctx.destination);
       this.musicGain = this.ctx.createGain();
-      this.musicGain.gain.value = 0.16;
+      this.musicGain.gain.value = 0.15;
       this.musicGain.connect(this.master);
       this.sfxGain = this.ctx.createGain();
       this.sfxGain.gain.value = 0.9;
@@ -37,10 +37,10 @@ export class AudioSys {
       // Engine hum: a sawtooth whose pitch follows speed, started once.
       this.engineOsc = this.ctx.createOscillator();
       this.engineOsc.type = 'sawtooth';
-      this.engineOsc.frequency.value = 55;
+      this.engineOsc.frequency.value = 52;
       const lp = this.ctx.createBiquadFilter();
       lp.type = 'lowpass';
-      lp.frequency.value = 320;
+      lp.frequency.value = 300;
       this.engineGain = this.ctx.createGain();
       this.engineGain.gain.value = 0;
       this.engineOsc.connect(lp);
@@ -63,7 +63,7 @@ export class AudioSys {
     if (!this.ctx || !this.engineOsc) return;
     const target = on ? 0.05 + speed01 * 0.075 : 0;
     this.engineGain.gain.setTargetAtTime(target, this.ctx.currentTime, 0.08);
-    this.engineOsc.frequency.setTargetAtTime(52 + speed01 * 118, this.ctx.currentTime, 0.06);
+    this.engineOsc.frequency.setTargetAtTime(50 + speed01 * 122, this.ctx.currentTime, 0.06);
   }
 
   blip(freq, dur, type, vol, slideTo) {
@@ -133,8 +133,13 @@ export class AudioSys {
   }
 
   jingle() {
-    const notes = [523, 659, 784, 1046];
+    const notes = [587, 698, 880, 1174];
     notes.forEach((n, i) => setTimeout(() => this.blip(n, 0.22, 'triangle', 0.24), i * 110));
+  }
+
+  // A race countdown beep: low for 3-2-1, high for GO.
+  countBeep(go) {
+    this.blip(go ? 880 : 440, go ? 0.3 : 0.12, 'square', 0.22);
   }
 
   siren(dt) {
@@ -146,15 +151,15 @@ export class AudioSys {
     }
   }
 
-  // Original groove: A-minor-ish bass walk with a bright pentatonic lead.
+  // Original groove: D-minor bass walk with a bright pentatonic lead.
   // Called every frame; schedules one 8th-note step when its time comes.
   music(dt, intensity) {
     if (!this.ctx || this.muted || !this.started) return;
     this.musicTimer -= dt;
     if (this.musicTimer > 0) return;
     this.musicTimer = 0.21;
-    const bass = [110, 0, 110, 0, 130.8, 0, 98, 0, 110, 0, 110, 0, 146.8, 0, 164.8, 0];
-    const lead = [0, 440, 0, 523, 0, 0, 659, 0, 0, 523, 0, 587, 0, 0, 784, 0];
+    const bass = [73.4, 0, 73.4, 0, 87.3, 0, 65.4, 0, 73.4, 0, 73.4, 0, 98, 0, 110, 0];
+    const lead = [0, 587, 0, 698, 0, 0, 880, 0, 0, 698, 0, 784, 0, 0, 1046, 0];
     const s = this.step % 16;
     const b = bass[s];
     if (b) {

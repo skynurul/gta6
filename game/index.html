@@ -3,85 +3,134 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Solmar Bay — an open-world crime story</title>
+<title>Ember Isle — a 3D open-world crime story</title>
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; background: #1b2a3a; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
   #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair; }
+  .hidden { display: none !important; }
   #hud { position: fixed; inset: 0; pointer-events: none; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
   .panel { background: rgba(10, 20, 30, 0.55); border: 1px solid rgba(255,255,255,.18); border-radius: 10px; padding: 8px 12px; backdrop-filter: blur(2px); }
   #topleft { position: absolute; top: 14px; left: 14px; display: flex; flex-direction: column; gap: 8px; }
   #cash { font-size: 26px; font-weight: 800; color: #7cf29c; }
   #health-row { display: flex; align-items: center; gap: 8px; font-weight: 700; }
-  #health-bar { width: 150px; height: 12px; background: rgba(0,0,0,.5); border-radius: 6px; overflow: hidden; }
-  #health-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #37d67a, #a7f3d0); transition: width .2s; }
-  #health-fill.low { background: linear-gradient(90deg, #ef4444, #fca5a5); }
+  #health-bar { width: 150px; height: 12px; background: rgba(0,0,0,.5); border-radius: 6px; overflow: hidden; display: inline-block; }
+  #health-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #37d67a, #a7f3d0); transition: width .2s; display: block; }
   #topright { position: absolute; top: 14px; right: 14px; text-align: right; }
   #stars { font-size: 30px; letter-spacing: 3px; color: #ffd60a; }
   #stars.hot { animation: blink 0.7s steps(2) infinite; }
   @keyframes blink { 50% { opacity: 0.45; } }
   #wanted-label { font-size: 11px; letter-spacing: 2px; opacity: .85; }
+  #districts { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; }
+  .dist { font-size: 11px; text-align: center; min-width: 74px; }
+  .dist span { display: block; letter-spacing: 1px; opacity: .9; }
+  .dist .bar { height: 5px; background: rgba(0,0,0,.5); border-radius: 3px; margin: 3px 0 2px; overflow: hidden; }
+  .dist .bar i { display: block; height: 100%; background: #ffd60a; }
+  .dist.good .bar i { background: #37d67a; }
+  .dist.bad .bar i { background: #ef4444; }
+  #crew-strip { position: absolute; top: 112px; left: 14px; display: flex; gap: 6px; }
+  .crew-dot { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 12px; background: rgba(0,0,0,.5); color: #888; border: 1px solid rgba(255,255,255,.15); }
+  .crew-dot.in { color: var(--c); border-color: var(--c); }
+  .crew-dot.riding { color: #fff; background: var(--c); border-color: var(--c); }
   #mission { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); text-align: center; max-width: 560px; }
   #mission-title { font-size: 13px; letter-spacing: 3px; color: #ffd60a; font-weight: 800; }
   #mission-text { font-size: 16px; font-weight: 600; margin-top: 2px; }
   #minimap-wrap { position: absolute; left: 14px; bottom: 14px; }
-  #minimap { width: 180px; height: 180px; border-radius: 10px; border: 2px solid rgba(255,255,255,.35); display: block; background: #3aa7a3; }
+  #minimap { width: 180px; height: 180px; border-radius: 10px; border: 2px solid rgba(255,255,255,.35); display: block; background: #1e7a8a; }
   #map-label { font-size: 11px; letter-spacing: 2px; margin-top: 4px; opacity: .9; }
   #speedo { position: absolute; right: 14px; bottom: 14px; text-align: right; }
   #speed { font-size: 30px; font-weight: 800; }
   #car-name { font-size: 13px; opacity: .9; }
-  #toast { position: absolute; top: 76px; left: 50%; transform: translateX(-50%); font-size: 17px; font-weight: 700; background: rgba(10,20,30,.72); border: 1px solid rgba(255,214,10,.5); border-radius: 10px; padding: 10px 18px; opacity: 0; transition: opacity .25s; max-width: 640px; text-align: center; }
+  #toast { position: absolute; top: 110px; left: 50%; transform: translateX(-50%); font-size: 17px; font-weight: 700; background: rgba(10,20,30,.72); border: 1px solid rgba(255,214,10,.5); border-radius: 10px; padding: 10px 18px; opacity: 0; transition: opacity .25s; max-width: 640px; text-align: center; }
   #toast.show { opacity: 1; }
-  #menu { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: linear-gradient(180deg, rgba(10,25,45,.25), rgba(10,25,45,.78)); pointer-events: auto; }
-  #menu.hidden, #busted.hidden { display: none; }
-  #menu-card { text-align: center; max-width: 620px; padding: 34px 44px; background: rgba(8, 18, 30, 0.82); border: 1px solid rgba(255,214,10,.45); border-radius: 18px; color: #fff; }
-  #menu-title { font-size: 54px; font-weight: 900; letter-spacing: 6px; margin: 0; color: #ffd60a; text-shadow: 0 3px 0 #b45309, 0 6px 18px rgba(0,0,0,.6); }
-  #menu-body p { font-size: 17px; line-height: 1.5; margin: 10px 0; }
-  #menu-body .tagline { font-size: 19px; color: #7dd3fc; font-style: italic; }
-  #menu-body .controls { font-size: 14px; opacity: .9; background: rgba(255,255,255,.08); border-radius: 8px; padding: 10px; }
-  #menu-body .big { font-size: 22px; font-weight: 800; }
-  #menu-body .save-note { color: #7cf29c; font-weight: 700; }
+  .toast-line.good { color: #7cf29c; }
+  .toast-line.bad { color: #fca5a5; }
+  #race-hud { position: absolute; top: 185px; left: 50%; transform: translateX(-50%); text-align: center; }
+  #race-pos { font-size: 44px; font-weight: 900; color: #ffd60a; }
+  #race-cp { font-size: 15px; font-weight: 700; }
+  #race-count { font-size: 84px; font-weight: 900; color: #ffd60a; margin-top: 40px; }
+  #crew-panel { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(8,18,30,.92); border: 1px solid rgba(255,214,10,.45); border-radius: 14px; padding: 18px 24px; color: #fff; max-width: 520px; pointer-events: auto; z-index: 30; }
+  #crew-panel h3 { margin: 0 0 10px; letter-spacing: 3px; color: #ffd60a; }
+  #crew-panel .crew-row { margin-bottom: 12px; font-size: 14px; line-height: 1.45; }
+  #crew-panel .dim { opacity: .75; font-size: 13px; }
+  #menu, #title, #paused, #busted { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: linear-gradient(180deg, rgba(10,25,45,.25), rgba(10,25,45,.78)); pointer-events: auto; z-index: 20; }
+  #menu-card, #title-card, #paused-card { text-align: center; max-width: 640px; padding: 34px 44px; background: rgba(8, 18, 30, 0.82); border: 1px solid rgba(255,214,10,.45); border-radius: 18px; color: #fff; }
+  #menu-title, #title-card h1 { font-size: 54px; font-weight: 900; letter-spacing: 6px; margin: 0; color: #ffd60a; text-shadow: 0 3px 0 #b45309, 0 6px 18px rgba(0,0,0,.6); }
+  #title-card h1 { font-size: 64px; }
+  #menu-body, #title-card p { font-size: 17px; line-height: 1.5; margin: 10px 0; }
+  #title-card .tagline { font-size: 19px; color: #7dd3fc; font-style: italic; }
+  #title-card .controls { font-size: 14px; opacity: .9; background: rgba(255,255,255,.08); border-radius: 8px; padding: 10px; text-align: left; }
   #menu-hint { margin-top: 18px; font-size: 15px; letter-spacing: 1px; color: #ffd60a; font-weight: 700; animation: blink 1.4s steps(2) infinite; }
-  #busted { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(20,0,0,.55); pointer-events: auto; color: #fff; }
-  #busted h1 { font-size: 84px; font-weight: 900; letter-spacing: 10px; color: #fff; margin: 0; text-shadow: 0 4px 0 #7f1d1d, 0 8px 24px rgba(0,0,0,.7); }
-  #busted p { font-size: 18px; max-width: 520px; text-align: center; line-height: 1.5; }
+  #title-card button { font-size: 18px; font-weight: 800; padding: 12px 28px; margin: 8px 6px 0; border-radius: 10px; border: 2px solid #ffd60a; background: #ffd60a; color: #1a1a1a; cursor: pointer; }
+  #title-card button.ghost { background: transparent; color: #ffd60a; }
+  #busted { background: rgba(20,0,0,.55); flex-direction: column; }
+  #busted .big { font-size: 84px; font-weight: 900; letter-spacing: 10px; color: #fff; margin: 0; text-shadow: 0 4px 0 #7f1d1d, 0 8px 24px rgba(0,0,0,.7); }
+  #busted .sub { font-size: 18px; max-width: 520px; text-align: center; line-height: 1.5; color: #fff; }
+  #paused-card h2 { color: #ffd60a; letter-spacing: 4px; margin: 0 0 10px; }
   #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 </style>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
 </head>
 <body>
-<canvas id="game" aria-label="Solmar Bay: drive, steal cars, dodge the police and run jobs across an open city"></canvas>
-<div id="hud">
+<canvas id="game" aria-label="Ember Isle: a 3D open-world crime game on a volcanic island"></canvas>
+<div id="hud" class="hidden">
   <div id="topleft">
-    <div class="panel"><span id="cash">$40</span></div>
+    <div class="panel"><span id="cash">$150</span></div>
     <div class="panel" id="health-row">❤ <span id="health-bar"><span id="health-fill"></span></span> <span id="health-text">100</span></div>
   </div>
   <div id="topright">
     <div id="stars">☆☆☆☆☆</div>
-    <div id="wanted-label">SOLMAR BAY PD</div>
+    <div id="wanted-label">ISLE PD</div>
   </div>
+  <div id="districts"></div>
+  <div id="crew-strip"></div>
   <div id="minimap-wrap">
     <canvas id="minimap" width="180" height="180"></canvas>
-    <div id="map-label">SOLMAR BAY</div>
+    <div id="map-label">EMBER ISLE</div>
   </div>
   <div id="mission" class="panel">
-    <div id="mission-title">SOLMAR BAY</div>
-    <div id="mission-text">Press Enter to play.</div>
+    <div id="mission-title">EMBER ISLE</div>
+    <div id="mission-text">Press J for the next job.</div>
   </div>
   <div id="speedo">
-    <div id="speed"></div>
+    <div id="speed">0</div>
     <div id="car-name">On foot</div>
   </div>
+  <div id="race-hud" class="hidden">
+    <div id="race-pos">1st</div>
+    <div id="race-cp">Checkpoint 1/8</div>
+    <div id="race-count" class="hidden">3</div>
+  </div>
   <div id="toast"></div>
+  <div id="crew-panel" class="hidden"></div>
 </div>
-<div id="menu">
+<div id="menu" class="hidden">
   <div id="menu-card">
-    <h1 id="menu-title">SOLMAR BAY</h1>
+    <h1 id="menu-title">EMBER ISLE</h1>
     <div id="menu-body"></div>
-    <div id="menu-hint">Press Enter or click to play</div>
+    <div id="menu-hint">Press Enter or click to continue</div>
+  </div>
+</div>
+<div id="title">
+  <div id="title-card">
+    <h1>EMBER ISLE</h1>
+    <p class="tagline">A volcanic island. A crew of three. One crown to take.</p>
+    <p>Juno Reyes came home to race — and stayed to take the island. Drive the Coastal Ring, take the docks of Port Ash, and run the volcano itself. Earn standing in five districts, recruit Mara, Dario and Ilya, and stay one step ahead of the Isle PD.</p>
+    <p class="controls">WASD / arrows — walk &amp; drive &nbsp;·&nbsp; E — enter / exit car &nbsp;·&nbsp; Mouse — aim, click to shoot &nbsp;·&nbsp; Space — handbrake &nbsp;·&nbsp; Shift — sprint<br>J — next job &nbsp;·&nbsp; R — race at a race start &nbsp;·&nbsp; C — crew &nbsp;·&nbsp; P — pause &nbsp;·&nbsp; M — mute &nbsp;·&nbsp; Drag the mouse — orbit the camera</p>
+    <button id="continue-btn">Continue</button>
+    <button id="new-game" class="ghost">New Game</button>
+  </div>
+</div>
+<div id="paused" class="hidden">
+  <div id="paused-card">
+    <h2>PAUSED</h2>
+    <p>Ember Isle waits. Press P or Enter to keep playing.</p>
   </div>
 </div>
 <div id="busted" class="hidden">
-  <h1>BUSTED</h1>
-  <p></p>
+  <h1 class="big">BUSTED</h1>
+  <p class="sub"></p>
   <p style="color:#ffd60a;font-weight:700">Press Enter to keep playing.</p>
 </div>
 <p id="status" role="status" aria-live="polite"></p>
