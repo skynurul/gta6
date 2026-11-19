@@ -7,7 +7,8 @@ import { angleLerp, clamp, lerp } from './util.js';
 
 export function createRenderer(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(1);
+  // Full display density (capped at 2x) so the image stays crisp on HD screens.
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -27,29 +28,67 @@ export function resizeRenderer(renderer, camera) {
   camera.updateProjectionMatrix();
 }
 
-// Juno: red jacket, dark hair, a pistol at her side.
+// Juno: red jacket, dark hair, a pistol at her side. An articulated figure:
+// legs and arms swing from hip/shoulder pivots so walk and run read on screen.
 export function createPlayerMesh() {
   const g = new THREE.Group();
-  const jacket = new THREE.MeshLambertMaterial({ color: 0xc23a1e });
-  const skin = new THREE.MeshLambertMaterial({ color: 0xe8b890 });
-  const dark = new THREE.MeshLambertMaterial({ color: 0x2a2d33 });
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.5, 1.5, 8), jacket);
-  body.position.y = 1.05;
-  body.castShadow = true;
-  g.add(body);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.34, 10, 8), skin);
-  head.position.y = 2.1;
+  const jacket = new THREE.MeshStandardMaterial({ color: 0xc23a1e, roughness: 0.7, metalness: 0.05 });
+  const skin = new THREE.MeshStandardMaterial({ color: 0xe8b890, roughness: 0.6 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x2a2d33, roughness: 0.85 });
+  const denim = new THREE.MeshStandardMaterial({ color: 0x2e4a6a, roughness: 0.8 });
+
+  const hips = new THREE.Group();
+  hips.position.y = 0.98;
+  g.add(hips);
+  const hipMesh = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.22, 0.62), denim);
+  hipMesh.position.y = 0.05;
+  hipMesh.castShadow = true;
+  hips.add(hipMesh);
+
+  const torso = new THREE.Group();
+  torso.position.y = 1.08;
+  g.add(torso);
+  const chest = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.72, 0.72), jacket);
+  chest.position.y = 0.36;
+  chest.castShadow = true;
+  torso.add(chest);
+  const collar = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.14, 0.74), dark);
+  collar.position.y = 0.72;
+  torso.add(collar);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.32, 12, 10), skin);
+  head.position.y = 2.02;
   head.castShadow = true;
   g.add(head);
-  const hair = new THREE.Mesh(new THREE.SphereGeometry(0.36, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2), dark);
-  hair.position.y = 2.14;
+  const hair = new THREE.Mesh(new THREE.SphereGeometry(0.34, 12, 10, 0, Math.PI * 2, 0, Math.PI / 2), dark);
+  hair.position.y = 2.06;
   g.add(hair);
-  const legs = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.4, 0.6, 8), dark);
-  legs.position.y = 0.3;
-  g.add(legs);
-  const gun = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.14, 0.14), dark);
-  gun.position.set(0.55, 1.15, 0.15);
-  g.add(gun);
+  const hairBack = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.5, 0.42), dark);
+  hairBack.position.set(-0.22, 1.82, 0);
+  g.add(hairBack);
+
+  function limb(mat, w, h, d, x, y, z) {
+    const pivot = new THREE.Group();
+    pivot.position.set(x, y, z);
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    mesh.position.y = -h / 2;
+    mesh.castShadow = true;
+    pivot.add(mesh);
+    return pivot;
+  }
+  const legL = limb(denim, 0.24, 0.95, 0.28, 0, 0.98, 0.2);
+  const legR = limb(denim, 0.24, 0.95, 0.28, 0, 0.98, -0.2);
+  g.add(legL);
+  g.add(legR);
+  const armL = limb(jacket, 0.2, 0.72, 0.24, 0, 1.72, 0.44);
+  const armR = limb(jacket, 0.2, 0.72, 0.24, 0, 1.72, -0.44);
+  g.add(armL);
+  g.add(armR);
+  const gun = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.12, 0.12), dark);
+  gun.position.set(0.28, -0.72, 0);
+  armR.add(gun);
+
+  g.userData.limbs = { legL, legR, armL, armR, torso };
   g.userData.gun = gun;
   return g;
 }
@@ -58,9 +97,25 @@ export function syncPlayerMesh(mesh, player, dt, moving) {
   const h = terrainHeight(player.x, player.z);
   mesh.position.set(player.x, h, player.z);
   mesh.rotation.y = -player.angle;
+  const limbs = mesh.userData.limbs;
+  if (!limbs) return;
   if (moving) {
     player.bob = (player.bob || 0) + dt * 9;
     mesh.position.y = h + Math.abs(Math.sin(player.bob)) * 0.1;
+    const s = Math.sin(player.bob);
+    limbs.legL.rotation.z = s * 0.65;
+    limbs.legR.rotation.z = -s * 0.65;
+    limbs.armL.rotation.z = -s * 0.5;
+    limbs.armR.rotation.z = s * 0.5;
+    limbs.torso.rotation.z = -0.06;
+  } else {
+    const t = performance.now() * 0.001;
+    limbs.legL.rotation.z *= 0.8;
+    limbs.legR.rotation.z *= 0.8;
+    limbs.armL.rotation.z = Math.sin(t * 1.4) * 0.04;
+    limbs.armR.rotation.z = -Math.sin(t * 1.4) * 0.04;
+    limbs.torso.rotation.z = 0;
+    limbs.torso.position.y = 1.08 + Math.sin(t * 1.4) * 0.015;
   }
 }
 

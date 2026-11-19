@@ -630,12 +630,44 @@ function stageShot() {
     // A GT parked on the docks, right in front of Juno, sunlit side to camera.
     const gt = game.cars.find((c) => c.model.id === 'gt');
     if (gt) {
-      gt.x = 3145;
-      gt.z = 1505;
+      gt.x = 3149;
+      gt.z = 1553;
       gt.angle = 0.2;
       syncCarMesh(gt);
     }
     setTimeout(() => { window.__shotReady = true; }, 1200);
+    return;
+  }
+  if (shot === 'vista') {
+    // Cover shot: the GT on avenue 1800 heading north, the detailed city
+    // ahead and Mount Cinder smoking behind it, 3 stars on the run.
+    const gt = game.cars.find((c) => c.model.id === 'gt');
+    if (gt) {
+      enterCar(gt);
+      gt.x = 1800;
+      gt.z = 1900;
+      gt.angle = -Math.PI / 2;
+      gt.speed = 0;
+      gt.vx = 0;
+      gt.vz = 0;
+      syncCarMesh(gt);
+    }
+    p.x = 1800;
+    p.z = 1900;
+    p.angle = -Math.PI / 2;
+    chaseCam.yaw = p.angle + Math.PI;
+    chaseCam.yawOffset = 0;
+    const taxi = game.cars.find((c) => c.model.id === 'taxi');
+    if (taxi) {
+      taxi.x = 1800;
+      taxi.z = 1750;
+      taxi.angle = -Math.PI / 2;
+      syncCarMesh(taxi);
+    }
+    game.police.heat = 60;
+    game.police.stars = 3;
+    game.police.lastCrime = game.time;
+    setTimeout(() => { window.__shotReady = true; }, 1500);
     return;
   }
   window.__shotReady = true;

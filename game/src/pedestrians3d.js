@@ -6,29 +6,50 @@ import { terrainHeight, randomRoadPoint, collideWorld } from './terrain3d.js';
 import { clamp, dist, randRange } from './util.js';
 
 const SHIRTS = [0xd95a4a, 0x4a7ad9, 0x4ad97a, 0xe8c860, 0x9a5ad9, 0xffffff, 0x2a2d33, 0xd97a4a];
+const PANTS = [0x2e4a6a, 0x3a3f46, 0x5a4a3a, 0x2a2d33, 0x6a6a5a];
 
+// An articulated walker: legs and arms swing from hip/shoulder pivots.
 export function buildPedMesh(shirt, skin) {
   const g = new THREE.Group();
-  const body = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.42, 0.5, 1.5, 8),
-    new THREE.MeshLambertMaterial({ color: shirt }),
-  );
-  body.position.y = 1.05;
-  body.castShadow = true;
-  g.add(body);
-  const head = new THREE.Mesh(
-    new THREE.SphereGeometry(0.34, 10, 8),
-    new THREE.MeshLambertMaterial({ color: skin }),
-  );
-  head.position.y = 2.1;
+  const shirtMat = new THREE.MeshStandardMaterial({ color: shirt, roughness: 0.8 });
+  const skinMat = new THREE.MeshStandardMaterial({ color: skin, roughness: 0.6 });
+  const pantsMat = new THREE.MeshStandardMaterial({ color: PANTS[Math.floor(Math.random() * PANTS.length)], roughness: 0.85 });
+  const darkMat = new THREE.MeshStandardMaterial({ color: 0x2a2d33, roughness: 0.85 });
+
+  const hips = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.2, 0.58), pantsMat);
+  hips.position.y = 1.02;
+  hips.castShadow = true;
+  g.add(hips);
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.7, 0.66), shirtMat);
+  torso.position.y = 1.45;
+  torso.castShadow = true;
+  g.add(torso);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.32, 10, 8), skinMat);
+  head.position.y = 2.06;
   head.castShadow = true;
   g.add(head);
-  const legs = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.36, 0.4, 0.6, 8),
-    new THREE.MeshLambertMaterial({ color: 0x2a2d33 }),
-  );
-  legs.position.y = 0.3;
-  g.add(legs);
+  const hair = new THREE.Mesh(new THREE.SphereGeometry(0.33, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2), darkMat);
+  hair.position.y = 2.1;
+  g.add(hair);
+
+  function limb(mat, w, h, d, x, y, z) {
+    const pivot = new THREE.Group();
+    pivot.position.set(x, y, z);
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    mesh.position.y = -h / 2;
+    mesh.castShadow = true;
+    pivot.add(mesh);
+    return pivot;
+  }
+  const legL = limb(pantsMat, 0.22, 0.95, 0.26, 0, 0.98, 0.19);
+  const legR = limb(pantsMat, 0.22, 0.95, 0.26, 0, 0.98, -0.19);
+  const armL = limb(shirtMat, 0.18, 0.68, 0.22, 0, 1.72, 0.4);
+  const armR = limb(shirtMat, 0.18, 0.68, 0.22, 0, 1.72, -0.4);
+  g.add(legL);
+  g.add(legR);
+  g.add(armL);
+  g.add(armR);
+  g.userData.limbs = { legL, legR, armL, armR };
   return g;
 }
 
@@ -122,5 +143,15 @@ export function updatePeds(game, dt) {
     const h = terrainHeight(ped.x, ped.z);
     ped.mesh.position.set(ped.x, h + Math.abs(Math.sin(ped.bob)) * 0.12, ped.z);
     ped.mesh.rotation.y = -ped.angle;
+    // Walk cycle: legs and arms swing opposite, faster when fleeing.
+    const limbs = ped.mesh.userData.limbs;
+    if (limbs) {
+      const s = Math.sin(ped.bob);
+      const amp = ped.state === 'flee' ? 0.85 : 0.55;
+      limbs.legL.rotation.z = s * amp;
+      limbs.legR.rotation.z = -s * amp;
+      limbs.armL.rotation.z = -s * amp * 0.75;
+      limbs.armR.rotation.z = s * amp * 0.75;
+    }
   }
 }
